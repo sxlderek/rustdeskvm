@@ -1,0 +1,94 @@
+name: rustdesk-kubuntu2404
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Update system & install Kubuntu desktop
+        run: |
+          sudo apt update
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y kde-standard
+
+      - name: Install RustDesk
+        run: |
+          sudo apt install -y curl
+          curl -L https://github.com/rustdesk/rustdesk/releases/latest/download/rustdesk.deb -o rustdesk.deb
+          sudo apt install -y ./rustdesk.deb
+
+      - name: Start RustDesk service
+        run: |
+          sudo systemctl enable rustdesk
+          sudo systemctl start rustdesk
+
+      - name: Configure RustDesk
+        env:
+          RUSTDESK_PASSWORD: ${{ secrets.RUSTDESK_PASSWORD }}
+        run: |
+          # Wait for service
+          while ! systemctl is-active --quiet rustdesk; do
+            echo "Waiting for RustDesk service..."
+            sleep 2
+          done
+
+          rustdesk --password "$RUSTDESK_PASSWORD"
+          rustdesk --option allow-remote-config-modification Y
+
+      - name: Start KDE Plasma (headless)
+        run: |
+          export DISPLAY=:0
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+
+          # Start a virtual X server
+          sudo apt install -y xvfb
+          Xvfb :0 -screen 0 1920x1080x24 &
+
+          # Start KDE session
+          startplasma-x11 &
+
+      - name: Get ID and Notify
+        id: rustdesk-info
+        env:
+          EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          RUSTDESK_PASSWORD: ${{ secrets.RUSTDESK_PASSWORD }}
+        run: |
+          ID=$(rustdesk --get-id | tr -d '\n')
+          echo "id=$ID" >> $GITHUB_OUTPUT
+
+          echo "---------------------------"
+          echo "RustDesk ID: $ID"
+          echo "---------------------------"
+
+          if [ -n "$EMAIL_USERNAME" ] && [ -n "$EMAIL_PASSWORD" ]; then
+            python3 - <<EOF
+import smtplib
+from email.message import EmailMessage
+
+msg = EmailMessage()
+msg["Subject"] = f"RustdeskVM Ready - ID: $ID"
+msg["From"] = "$EMAIL_USERNAME"
+msg["To"] = "$EMAIL_TO"
+msg.set_content(f"ID: $ID\nPassword: $RUSTDESK_PASSWORD\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+
+with smtplib.SMTP("smtp.gmail.com", 587) as s:
+    s.starttls()
+    s.login("$EMAIL_USERNAME", "$EMAIL_PASSWORD")
+    s.send_message(msg)
+EOF
+            echo "Notification sent via SMTP"
+          fi
+
+      - name: Keep Alive
+        if: always()
+        run: |
+          echo "VM is now accessible. Use RustDesk ID: ${{ steps.rustdesk-info.outputs.id }}"
+          while true; do
+            echo "Active: $(date +'%H:%M:%S')"
+            sleep 60
+          done
