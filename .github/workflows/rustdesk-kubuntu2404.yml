@@ -12,7 +12,7 @@ jobs:
       - name: Update system & install Kubuntu desktop
         run: |
           sudo apt update
-          sudo DEBIAN_FRONTEND=noninteractive apt install -y kde-standard
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y kde-standard xvfb
 
       - name: Install RustDesk
         run: |
@@ -29,7 +29,6 @@ jobs:
         env:
           RUSTDESK_PASSWORD: ${{ secrets.RUSTDESK_PASSWORD }}
         run: |
-          # Wait for service
           while ! systemctl is-active --quiet rustdesk; do
             echo "Waiting for RustDesk service..."
             sleep 2
@@ -43,11 +42,8 @@ jobs:
           export DISPLAY=:0
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
 
-          # Start a virtual X server
-          sudo apt install -y xvfb
           Xvfb :0 -screen 0 1920x1080x24 &
-
-          # Start KDE session
+          sleep 2
           startplasma-x11 &
 
       - name: Get ID and Notify
@@ -57,8 +53,12 @@ jobs:
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           RUSTDESK_PASSWORD: ${{ secrets.RUSTDESK_PASSWORD }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           ID=$(rustdesk --get-id | tr -d '\n')
+          export ID
           echo "id=$ID" >> $GITHUB_OUTPUT
 
           echo "---------------------------"
@@ -69,16 +69,20 @@ jobs:
             python3 - <<EOF
 import smtplib
 from email.message import EmailMessage
+import os
 
 msg = EmailMessage()
-msg["Subject"] = f"RustdeskVM Ready - ID: $ID"
-msg["From"] = "$EMAIL_USERNAME"
-msg["To"] = "$EMAIL_TO"
-msg.set_content(f"ID: $ID\nPassword: $RUSTDESK_PASSWORD\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+msg["Subject"] = f"RustdeskVM Ready - ID: {os.environ['ID']}"
+msg["From"] = os.environ["EMAIL_USERNAME"]
+msg["To"] = os.environ["EMAIL_TO"]
+
+run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+
+msg.set_content(f"ID: {os.environ['ID']}\nPassword: {os.environ['RUSTDESK_PASSWORD']}\nRun: {run_url}")
 
 with smtplib.SMTP("smtp.gmail.com", 587) as s:
     s.starttls()
-    s.login("$EMAIL_USERNAME", "$EMAIL_PASSWORD")
+    s.login(os.environ["EMAIL_USERNAME"], os.environ["EMAIL_PASSWORD"])
     s.send_message(msg)
 EOF
             echo "Notification sent via SMTP"
