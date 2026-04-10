@@ -1,4 +1,4 @@
-name: RustdeskVM
+name: rustdesk-win2022
 
 on:
   workflow_dispatch:
