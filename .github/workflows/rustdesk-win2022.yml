@@ -44,19 +44,49 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           RUSTDESK_PASSWORD: ${{ secrets.RUSTDESK_PASSWORD }}
         run: |
-          $id = & "$env:ProgramFiles\RustDesk\rustdesk.exe" --get-id
-          $id = $id.Trim()
-          echo "id=$id" >> $env:GITHUB_OUTPUT
+          $maxRetries = 15
+          $retryCount = 0
+          $validId = $false
+          $finalId = ""
+
+          while (-not $validId -and $retryCount -lt $maxRetries) {
+              $retryCount++
+              Write-Host "Attempt $retryCount of $maxRetries to obtain RustDesk ID..."
+              
+              $rawId = & "$env:ProgramFiles\RustDesk\rustdesk.exe" --get-id
+              
+              if ($rawId) {
+                  $cleanId = ($rawId -join "").Trim()
+                  
+                  if ($cleanId -match '^\d{8,}$') {
+                      Write-Host "✓ Successfully obtained valid RustDesk ID: $cleanId"
+                      $finalId = $cleanId
+                      echo "id=$finalId" >> $env:GITHUB_OUTPUT
+                      $validId = $true
+                      break
+                  }
+              }
+              
+              if (-not $validId -and $retryCount -lt $maxRetries) {
+                  Write-Host "Warning: Valid ID not ready yet. Retrying in 30 seconds..."
+                  Start-Sleep -Seconds 30
+              }
+          }
+
+          if (-not $validId) {
+              Write-Error "Error: Failed to obtain a valid RustDesk ID after $maxRetries attempts."
+              exit 1
+          }
           
           Write-Host "---------------------------"
-          Write-Host "RustDesk ID: $id"
+          Write-Host "RustDesk ID: $finalId"
           Write-Host "---------------------------"
 
           if ($env:EMAIL_USERNAME -and $env:EMAIL_PASSWORD) {
             # Replacement for deprecated Send-MailMessage using .NET Classes
             $msg = New-Object System.Net.Mail.MailMessage($env:EMAIL_USERNAME, $env:EMAIL_TO)
-            $msg.Subject = "RustdeskVM Ready - ID: $id"
-            $msg.Body = "ID: $id `nPassword: $env:RUSTDESK_PASSWORD `nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            $msg.Subject = "RustdeskVM Ready - ID: $finalId"
+            $msg.Body = "ID: $finalId `nPassword: $env:RUSTDESK_PASSWORD `nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             
             $smtp = New-Object System.Net.Mail.SmtpClient("smtp.gmail.com", 587)
             $smtp.EnableSsl = $true
