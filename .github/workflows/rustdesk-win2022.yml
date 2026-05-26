@@ -15,7 +15,6 @@ jobs:
           choco install rustdesk -y --no-progress
           # Ensure the installation path is added to the session
           $env:Path += ";$env:ProgramFiles\RustDesk"
-          & "rustdesk.exe" --install-service
 
       - name: Configure RustDesk
         shell: pwsh
@@ -102,7 +101,7 @@ jobs:
           }
 
       - name: Keep Alive
-        if: always()
+        if: success()
         shell: pwsh
         run: |
           Write-Host "VM is now accessible. Use RustDesk ID: ${{ steps.rustdesk-info.outputs.id }}"
