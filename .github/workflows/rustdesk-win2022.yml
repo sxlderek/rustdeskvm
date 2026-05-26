@@ -52,7 +52,7 @@ jobs:
               $retryCount++
               Write-Host "Attempt $retryCount of $maxRetries to obtain RustDesk ID..."
               
-              $rawId = & "$env:ProgramFiles\RustDesk\rustdesk.exe" --get-id
+              $rawId = & "$env:ProgramFiles\RustDesk\rustdesk.exe"--get-id 2>$null
               
               if ($rawId) {
                   $cleanId = ($rawId -join "").Trim()
