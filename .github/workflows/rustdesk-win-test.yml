@@ -1,4 +1,4 @@
-name: rustdesk-win2025
+name: rustdesk-win-test
 
 on:
     workflow_dispatch:
